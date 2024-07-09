@@ -103,6 +103,8 @@ class Handler:
                     msg = msg.encode('utf-8')
             try:
                 self.stream.write(msg)
+            except TypeError:
+                self.stream.write(msg.decode('utf-8'))
             except UnicodeError:
                 # TODO sort out later
                 # this only occurs because of a test stream type
@@ -450,9 +452,10 @@ class TimedRotatingFileHandler(FileHandler):
         Output the record to the file, catering for rollover as described
         in doRollover().
         """
+        if self.shouldRollover(record):
+            self.doRollover()
         FileHandler.emit(self, record)
-        self.doRollover()
-
+        
     def _remove(self, fn): # pragma: no cover
         # this is here to service stubbing in unit tests
         return os.remove(fn)
@@ -480,15 +483,6 @@ class TimedRotatingFileHandler(FileHandler):
             # E.g. cleanup script removes active log.
             if why.args[0] != errno.ENOENT:
                 raise
-
-    def remove(self, dfn):
-        if self._exists(dfn):
-            try:
-                self._remove(dfn)
-            except OSError as why:
-                # catch race condition (destination already deleted)
-                if why.args[0] != errno.ENOENT:
-                    raise
 
     def getFilesToDelete(self):
         """
@@ -557,17 +551,14 @@ class TimedRotatingFileHandler(FileHandler):
         if os.path.exists(dfn):
             # Already rolled over.
             return
-
-        if self.stream:
-            self.stream.close()
-            self.stream = None
-
+        
+        self.stream.close()
         self.removeAndRename(self.baseFilename, dfn)
 
         if self.backupCount > 0:
             for s in self.getFilesToDelete():
                 if os.path.exists(s):
-                    self.remove(s)
+                    self._remove(s)
 
         self.stream = open(self.baseFilename, 'wb')
         self.rolloverAt = self.computeRollover(currentTime)
